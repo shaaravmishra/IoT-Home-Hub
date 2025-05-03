@@ -12,10 +12,14 @@ Components
 ## Hardware:
 
 ESP8266 Wi-Fi Module
+
 4-Relay Module
+
 Optional: Sensors (for additional features)
 ## Software:
 
 Arduino IDE (for ESP8266 programming)
+
 Python (for data analysis and machine learning)
+
 Cloud platform (e.g., AWS)
