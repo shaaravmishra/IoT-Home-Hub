@@ -1,105 +1,109 @@
-#define ENABLE_DEBUG
-
-#ifdef ENABLE_DEBUG
-   #define DEBUG_ESP_PORT Serial
-   #define NODEBUG_WEBSOCKETS
-   #define NDEBUG
-#endif 
-
 #include <Arduino.h>
-#if defined(ESP8266)
-  #include <ESP8266WiFi.h>
-#elif defined(ESP32) || defined(ARDUINO_ARCH_RP2040)
-  #include <WiFi.h>
-#endif
-
+#include <ESP8266WiFi.h>  
 #include "SinricPro.h"
 #include "SinricProSwitch.h"
+#include <map>
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>  // OLED display library
 
-#define WIFI_SSID         "Okay"
-#define WIFI_PASS         "01011010"
-#define APP_KEY           "4d786cf8-1d7c-47b4-abab-bd8310b01a37"
-#define APP_SECRET        "8c6d87d1-d4a9-4fb8-99d4-6d64485ebbea-ea949ccf-20c7-427c-973c-69deb420a293"
+#define WIFI_SSID     "xxxx"
+#define WIFI_PASS     "xxxx"
+#define APP_KEY       "xxxx"
+#define APP_SECRET    "xxxx"
 
-#define SWITCH_ID_1       "66c0d3d8deddece34b7d8d2d"
-#define RELAYPIN_1        1
+#define device_ID_1   "xxxx"
+#define device_ID_2   "xxxx"
+#define RelayPin1 14     // D5
+#define RelayPin2 12     // D6
+#define RelayPin3 13     // D7
+#define wifiLed   2      // D4
+#define BAUD_RATE 9600
 
-#define SWITCH_ID_2       "66c0d401deddece34b7d8d5e"
-#define RELAYPIN_2        2
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1); // OLED initialization
 
-#define SWITCH_ID_3       "66c0d3ed54041e4ff61ec068"
-#define RELAYPIN_3        3
+typedef struct {
+  int relayPIN;
+} deviceConfig_t;
 
-#define BAUD_RATE         115200                // Change baudrate to your need
+std::map<String, deviceConfig_t> devices = {
+    {device_ID_1, {RelayPin1}},
+    {device_ID_2, {RelayPin2}},
+};
 
-bool onPowerState1(const String &deviceId, bool &state) {
- Serial.printf("Device 1 turned %s", state?"on":"off");
- digitalWrite(RELAYPIN_1, state ? LOW:HIGH);
- return true; // request handled properly
+bool onPowerState(String deviceId, bool &state) {
+  int relayPIN = devices[deviceId].relayPIN;
+  digitalWrite(relayPIN, state);
+  return true;
 }
 
-bool onPowerState2(const String &deviceId, bool &state) {
- Serial.printf("Device 2 turned %s", state?"on":"off");
- digitalWrite(RELAYPIN_2, state ? LOW:HIGH);
- return true; // request handled properly
+void setupRelays() {
+  for (auto &device : devices) {
+    int relayPIN = device.second.relayPIN;
+    pinMode(relayPIN, OUTPUT);
+    digitalWrite(relayPIN, HIGH);
+  }
 }
 
-bool onPowerState3(const String &deviceId, bool &state) {
- Serial.printf("Device 3 turned %s", state?"on":"off");
- digitalWrite(RELAYPIN_3, state ? LOW:HIGH);
- return true; // request handled properly
-}
-
-// setup function for WiFi connection
 void setupWiFi() {
-  Serial.printf("\r\n[Wifi]: Connecting");
-
-  #if defined(ESP8266)
-    WiFi.setSleepMode(WIFI_NONE_SLEEP); 
-    WiFi.setAutoReconnect(true);
-  #elif defined(ESP32)
-    WiFi.setSleep(false); 
-    WiFi.setAutoReconnect(true);
-  #endif
-
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.printf(".");
+  int wifiRetries = 0;
+  
+  // Try connecting to Wi-Fi, retrying for a maximum of 30 seconds
+  while (WiFi.status() != WL_CONNECTED && wifiRetries < 120) {
     delay(250);
+    wifiRetries++;
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.print("Wi-Fi: Offline");
+    display.display();
   }
 
-  Serial.printf("connected!\r\n[WiFi]: IP-Address is %s\r\n", WiFi.localIP().toString().c_str());
+  if (WiFi.status() == WL_CONNECTED) {
+    // If Wi-Fi is connected
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.print("Wi-Fi: Connected");
+    display.display();
+    digitalWrite(wifiLed, HIGH);  // Optional: LED to indicate Wi-Fi is connected
+  }
 }
 
-// setup function for SinricPro
 void setupSinricPro() {
-  // add devices and callbacks to SinricPro
-  pinMode(RELAYPIN_1, OUTPUT);
-  pinMode(RELAYPIN_2, OUTPUT);
-  pinMode(RELAYPIN_3, OUTPUT);
-    
-  SinricProSwitch& mySwitch1 = SinricPro[SWITCH_ID_1];
-  mySwitch1.onPowerState(onPowerState1);
-  
-  SinricProSwitch& mySwitch2 = SinricPro[SWITCH_ID_2];
-  mySwitch2.onPowerState(onPowerState2);
-  
-  SinricProSwitch& mySwitch3 = SinricPro[SWITCH_ID_3];
-  mySwitch3.onPowerState(onPowerState3);
-  
-  
-  // setup SinricPro
-  SinricPro.onConnected([](){ Serial.printf("Connected to SinricPro\r\n"); }); 
-  SinricPro.onDisconnected([](){ Serial.printf("Disconnected from SinricPro\r\n"); });
-  SinricPro.restoreDeviceStates(true); // Uncomment to restore the last known state from the server.
-   
+  for (auto &device : devices) {
+    const char *deviceId = device.first.c_str();
+    SinricProSwitch &mySwitch = SinricPro[deviceId];
+    mySwitch.onPowerState(onPowerState);
+  }
   SinricPro.begin(APP_KEY, APP_SECRET);
+  SinricPro.restoreDeviceStates(true);
 }
 
-// main setup function
 void setup() {
-  Serial.begin(BAUD_RATE); Serial.printf("\r\n\r\n");
+  Serial.begin(BAUD_RATE);
+  pinMode(wifiLed, OUTPUT);
+  digitalWrite(wifiLed, LOW);
+  
+  // Initialize OLED display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("OLED allocation failed"));
+    for (;;);
+  }
+  
+  // Initial display message
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.print("S: Checking...");
+  display.display();
+
+  setupRelays();
   setupWiFi();
   setupSinricPro();
 }
@@ -107,3 +111,4 @@ void setup() {
 void loop() {
   SinricPro.handle();
 }
+
