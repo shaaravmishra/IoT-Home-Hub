@@ -1,4 +1,4 @@
-#IoT Home Automation System
+# IoT Home Automation System
 Overview
 The IoT Home Automation System allows remote control of home appliances using the ESP8266 Wi-Fi module and relay modules. The system integrates machine learning to analyze energy consumption and estimate electricity bills. Data is stored in the cloud, and appliances are controlled via a mobile app or web interface.
 
